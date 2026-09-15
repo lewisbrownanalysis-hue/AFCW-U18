@@ -62,6 +62,21 @@ def section_banner(title, subtitle=""):
 
 section_banner("AFC Wimbledon U18s")
 
+# ---------- Password gate ----------
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.subheader("Staff Login")
+    pw = st.text_input("Enter the staff password", type="password")
+    if st.button("Log in"):
+        if pw == st.secrets.get("APP_PASSWORD", ""):
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+    st.stop()
+
 import sqlalchemy
 
 
