@@ -1,0 +1,7 @@
+streamlit
+pandas
+openpyxl
+python-docx
+streamlit-calendar
+sqlalchemy
+psycopg2-binary
