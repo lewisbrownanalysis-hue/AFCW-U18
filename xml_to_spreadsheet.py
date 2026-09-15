@@ -169,11 +169,11 @@ def render_editable_squad_table(label, manual_key, fixture_counts, value_col, ke
         counts[initials] = counts.get(initials, 0) + amount
 
     st.subheader(f"Add {value_col.lower()}")
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     with col1:
         player_input = st.text_input("Player initials (e.g. JB)", key=f"{key_prefix}_player")
     with col2:
-        amount_input = st.number_input(f"{value_col} to add", value=1, min_value=1, step=1, key=f"{key_prefix}_amount")
+        amount_input = st.number_input(f"{value_col} to add/remove", value=1, min_value=1, step=1, key=f"{key_prefix}_amount")
     with col3:
         st.write("")
         st.write("")
@@ -181,6 +181,30 @@ def render_editable_squad_table(label, manual_key, fixture_counts, value_col, ke
             if player_input.strip():
                 add_manual_tally(manual_key, player_input.strip(), amount_input)
                 st.rerun()
+    with col4:
+        st.write("")
+        st.write("")
+        if st.button("Remove from table", key=f"{key_prefix}_remove_btn"):
+            if player_input.strip():
+                add_manual_tally(manual_key, player_input.strip(), -amount_input)
+                st.rerun()
+
+    with st.expander(f"Reset a player's {value_col.lower()} to 0"):
+        reset_col1, reset_col2 = st.columns([2, 1])
+        with reset_col1:
+            reset_player = st.text_input("Player initials", key=f"{key_prefix}_reset_player")
+        with reset_col2:
+            st.write("")
+            st.write("")
+            if st.button("Reset to 0", key=f"{key_prefix}_reset_btn"):
+                if reset_player.strip():
+                    initials = reset_player.strip()
+                    fixture_amount = fixture_counts.get(initials, 0)
+                    manual_data = load_manual_tally(manual_key)
+                    # Set manual offset so total (fixture + manual) becomes 0
+                    manual_data[initials] = -fixture_amount
+                    kv_set(manual_key, manual_data)
+                    st.rerun()
 
     roster_rows = [
         {"Initials": initials, "Player": name, value_col: counts.get(initials, 0)}
@@ -926,11 +950,11 @@ with tabs[1]:
         suspension_threshold = 3  # fixed — players highlighted red once they hit this many
 
         st.subheader("Add strikes")
-        col1, col2, col3 = st.columns([2, 1, 1])
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
         with col1:
             strike_player = st.text_input("Player initials (e.g. JB)", key="manual_strike_player")
         with col2:
-            strike_amount = st.number_input("Strikes to add", value=1, min_value=1, step=1, key="manual_strike_amount")
+            strike_amount = st.number_input("Strikes to add/remove", value=1, min_value=1, step=1, key="manual_strike_amount")
         with col3:
             st.write("")
             st.write("")
@@ -938,6 +962,29 @@ with tabs[1]:
                 if strike_player.strip():
                     add_manual_tally(MANUAL_STRIKES_KEY, strike_player.strip(), strike_amount)
                     st.rerun()
+        with col4:
+            st.write("")
+            st.write("")
+            if st.button("Remove from table"):
+                if strike_player.strip():
+                    add_manual_tally(MANUAL_STRIKES_KEY, strike_player.strip(), -strike_amount)
+                    st.rerun()
+
+        with st.expander("Reset a player's strikes to 0"):
+            reset_col1, reset_col2 = st.columns([2, 1])
+            with reset_col1:
+                strike_reset_player = st.text_input("Player initials", key="strike_reset_player")
+            with reset_col2:
+                st.write("")
+                st.write("")
+                if st.button("Reset to 0", key="strike_reset_btn"):
+                    if strike_reset_player.strip():
+                        initials = strike_reset_player.strip()
+                        fixture_amount = strike_counts.get(initials, 0) - load_manual_tally(MANUAL_STRIKES_KEY).get(initials, 0)
+                        manual_data = load_manual_tally(MANUAL_STRIKES_KEY)
+                        manual_data[initials] = -fixture_amount
+                        kv_set(MANUAL_STRIKES_KEY, manual_data)
+                        st.rerun()
 
         # Always show the full squad, including players with 0 strikes
         roster_rows = [
