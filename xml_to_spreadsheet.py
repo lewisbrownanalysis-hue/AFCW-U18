@@ -85,18 +85,28 @@ def get_db_engine():
     return sqlalchemy.create_engine(st.secrets["DB_URL"])
 
 
-def kv_get(key, default):
+@st.cache_data(ttl=10)
+def _fetch_raw_value(key):
+    """Cached DB fetch \u2014 avoids hitting Supabase on every single click/tab switch."""
     try:
         engine = get_db_engine()
         with engine.connect() as conn:
             result = conn.execute(
                 sqlalchemy.text("SELECT value FROM app_data WHERE key = :k"), {"k": key}
             ).fetchone()
-            if result:
-                return json.loads(result[0])
-    except Exception as e:
-        st.warning(f"Could not load saved data for '{key}' from the database: {e}")
-    return default
+            return result[0] if result else None
+    except Exception:
+        return None
+
+
+def kv_get(key, default):
+    raw = _fetch_raw_value(key)
+    if raw is None:
+        return default
+    try:
+        return json.loads(raw)
+    except Exception:
+        return default
 
 
 def kv_set(key, value):
@@ -111,6 +121,7 @@ def kv_set(key, value):
                 {"k": key, "v": json.dumps(value)}
             )
             conn.commit()
+        _fetch_raw_value.clear(key)
     except Exception as e:
         st.error(f"Could not save '{key}' to the database: {e}")
 
