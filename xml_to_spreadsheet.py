@@ -259,6 +259,65 @@ def add_manual_tally(key, initials, amount):
     kv_set(key, data)
 
 
+SSG_DATA_KEY = "ssg_data"
+SSG_MONTHS = ["July", "August", "September", "October", "November", "December",
+              "January", "February", "March", "April", "May", "June"]
+
+
+def load_ssg_data():
+    """{month: {initials: points}}"""
+    return kv_get(SSG_DATA_KEY, {})
+
+
+def add_ssg_points(month, initials, amount):
+    data = load_ssg_data()
+    month_data = data.get(month, {})
+    month_data[initials] = month_data.get(initials, 0) + amount
+    data[month] = month_data
+    kv_set(SSG_DATA_KEY, data)
+
+
+def reset_ssg_points(month, initials):
+    data = load_ssg_data()
+    month_data = data.get(month, {})
+    month_data[initials] = 0
+    data[month] = month_data
+    kv_set(SSG_DATA_KEY, data)
+
+
+def render_ssg_league_table(counts):
+    """Read-only POS/PLAYER/POINTS table, full roster, highest points first."""
+    roster_rows = [
+        {"Initials": initials, "Player": name, "Points": counts.get(initials, 0)}
+        for initials, name in SQUAD_ROSTER.items()
+    ]
+    for initials in counts:
+        if initials not in SQUAD_ROSTER:
+            roster_rows.append({"Initials": initials, "Player": "(not in roster)", "Points": counts[initials]})
+
+    df = pd.DataFrame(roster_rows).sort_values(
+        ["Points", "Player"], ascending=[False, True]
+    ).reset_index(drop=True)
+
+    rows_html = "".join(
+        f'<tr style="background:{"#FFFFFF" if idx % 2 == 0 else "#F0F0F0"};color:#001C58;">'
+        f'<td style="padding:10px 16px;text-align:center;font-weight:800;">{idx + 1}</td>'
+        f'<td style="padding:10px 16px;text-align:left;font-weight:600;">{row["Player"]} ({row["Initials"]})</td>'
+        f'<td style="padding:10px 16px;text-align:center;">{row["Points"]}</td></tr>'
+        for idx, row in df.iterrows()
+    )
+    html = (
+        '<div style="background:#00285E;border-radius:6px;overflow:hidden;font-family:Arial, sans-serif;">'
+        '<table style="width:100%;border-collapse:collapse;">'
+        '<tr style="background:#00285E;color:#FFFFFF;">'
+        '<th style="padding:10px 16px;text-align:center;width:60px;">POS</th>'
+        '<th style="padding:10px 16px;text-align:left;">PLAYER</th>'
+        '<th style="padding:10px 16px;text-align:center;">POINTS</th></tr>'
+        f'{rows_html}</table></div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def load_fixture_data():
     return kv_get(FIXTURE_DATA_KEY, {})
 
@@ -408,7 +467,7 @@ tab_labels = ['Analysis', 'Squad', 'Physio', 'Staff']
 tabs = st.tabs(tab_labels)
 
 with tabs[0]:
-    sub_labels = ['Data & Spreadsheet', 'Player Ratings', 'Player History', 'Highlights Reel', 'Fixtures', 'Goal Scorers & Assists']
+    sub_labels = ['Data & Spreadsheet', 'Player Ratings', 'Player History', 'Highlights Reel', 'Fixtures', 'Goal Scorers & Assists', 'SSG']
     sub_tabs = st.tabs(sub_labels)
 
     with sub_tabs[0]:
@@ -984,6 +1043,60 @@ with tabs[0]:
             f'{combined_rows_html}</table></div>'
         )
         st.markdown(combined_html, unsafe_allow_html=True)
+
+    with sub_tabs[6]:
+        # ---------- SSG (Small-Sided Games) ----------
+
+        st.divider()
+        section_banner("SSG (Small-Sided Games)", "Monthly points table, plus an all-season combined league table")
+
+        ssg_data = load_ssg_data()
+        selected_month = st.selectbox("Month", SSG_MONTHS, key="ssg_month")
+        month_counts = ssg_data.get(selected_month, {})
+
+        st.subheader(f"Add points — {selected_month}")
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+        with col1:
+            ssg_player_input = st.text_input("Player initials (e.g. JB)", key="ssg_player")
+        with col2:
+            ssg_amount_input = st.number_input("Points to add/remove", value=1, min_value=1, step=1, key="ssg_amount")
+        with col3:
+            st.write("")
+            st.write("")
+            if st.button("Add to table", key="ssg_add_btn"):
+                if ssg_player_input.strip():
+                    add_ssg_points(selected_month, ssg_player_input.strip(), ssg_amount_input)
+                    st.rerun()
+        with col4:
+            st.write("")
+            st.write("")
+            if st.button("Remove from table", key="ssg_remove_btn"):
+                if ssg_player_input.strip():
+                    add_ssg_points(selected_month, ssg_player_input.strip(), -ssg_amount_input)
+                    st.rerun()
+
+        with st.expander(f"Reset a player's {selected_month} points to 0"):
+            reset_col1, reset_col2 = st.columns([2, 1])
+            with reset_col1:
+                ssg_reset_player = st.text_input("Player initials", key="ssg_reset_player")
+            with reset_col2:
+                st.write("")
+                st.write("")
+                if st.button("Reset to 0", key="ssg_reset_btn"):
+                    if ssg_reset_player.strip():
+                        reset_ssg_points(selected_month, ssg_reset_player.strip())
+                        st.rerun()
+
+        st.markdown(f"### 🏆 {selected_month} Table")
+        render_ssg_league_table(month_counts)
+
+        st.divider()
+        st.markdown("### 🏆 All Season Table")
+        season_counts = {}
+        for month_players in ssg_data.values():
+            for initials, points in month_players.items():
+                season_counts[initials] = season_counts.get(initials, 0) + points
+        render_ssg_league_table(season_counts)
 
 
 
