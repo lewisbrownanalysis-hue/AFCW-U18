@@ -260,6 +260,7 @@ def add_manual_tally(key, initials, amount):
 
 
 SSG_DATA_KEY = "ssg_data"
+MANUAL_SSG_SEASON_KEY = "manual_ssg_season"
 SSG_MONTHS = ["July", "August", "September", "October", "November", "December",
               "January", "February", "March", "April", "May", "June"]
 
@@ -1092,10 +1093,55 @@ with tabs[0]:
 
         st.divider()
         st.markdown("### 🏆 All Season Table")
+        st.caption("Starts as the total of every month above — adjust individual players below if you need to correct it.")
+
         season_counts = {}
         for month_players in ssg_data.values():
             for initials, points in month_players.items():
                 season_counts[initials] = season_counts.get(initials, 0) + points
+
+        manual_season = load_manual_tally(MANUAL_SSG_SEASON_KEY)
+        for initials, amount in manual_season.items():
+            season_counts[initials] = season_counts.get(initials, 0) + amount
+
+        st.subheader("Adjust All Season points")
+        s_col1, s_col2, s_col3, s_col4 = st.columns([2, 1, 1, 1])
+        with s_col1:
+            season_player_input = st.text_input("Player initials (e.g. JB)", key="ssg_season_player")
+        with s_col2:
+            season_amount_input = st.number_input("Points to add/remove", value=1.0, min_value=0.5, step=0.5, key="ssg_season_amount")
+        with s_col3:
+            st.write("")
+            st.write("")
+            if st.button("Add to table", key="ssg_season_add_btn"):
+                if season_player_input.strip():
+                    add_manual_tally(MANUAL_SSG_SEASON_KEY, season_player_input.strip(), season_amount_input)
+                    st.rerun()
+        with s_col4:
+            st.write("")
+            st.write("")
+            if st.button("Remove from table", key="ssg_season_remove_btn"):
+                if season_player_input.strip():
+                    add_manual_tally(MANUAL_SSG_SEASON_KEY, season_player_input.strip(), -season_amount_input)
+                    st.rerun()
+
+        with st.expander("Reset a player's All Season points to 0"):
+            sr_col1, sr_col2 = st.columns([2, 1])
+            with sr_col1:
+                season_reset_player = st.text_input("Player initials", key="ssg_season_reset_player")
+            with sr_col2:
+                st.write("")
+                st.write("")
+                if st.button("Reset to 0", key="ssg_season_reset_btn"):
+                    if season_reset_player.strip():
+                        initials = season_reset_player.strip()
+                        month_total = season_counts.get(initials, 0) - manual_season.get(initials, 0)
+                        manual_data = load_manual_tally(MANUAL_SSG_SEASON_KEY)
+                        # Set manual offset so total (month sum + manual) becomes 0
+                        manual_data[initials] = -month_total
+                        kv_set(MANUAL_SSG_SEASON_KEY, manual_data)
+                        st.rerun()
+
         render_ssg_league_table(season_counts)
 
 
