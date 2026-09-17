@@ -303,7 +303,7 @@ def render_ssg_league_table(counts):
         f'<tr style="background:{"#FFFFFF" if idx % 2 == 0 else "#F0F0F0"};color:#001C58;">'
         f'<td style="padding:10px 16px;text-align:center;font-weight:800;">{idx + 1}</td>'
         f'<td style="padding:10px 16px;text-align:left;font-weight:600;">{row["Player"]} ({row["Initials"]})</td>'
-        f'<td style="padding:10px 16px;text-align:center;">{row["Points"]}</td></tr>'
+        f'<td style="padding:10px 16px;text-align:center;">{row["Points"]:g}</td></tr>'
         for idx, row in df.iterrows()
     )
     html = (
@@ -1059,7 +1059,7 @@ with tabs[0]:
         with col1:
             ssg_player_input = st.text_input("Player initials (e.g. JB)", key="ssg_player")
         with col2:
-            ssg_amount_input = st.number_input("Points to add/remove", value=1, min_value=1, step=1, key="ssg_amount")
+            ssg_amount_input = st.number_input("Points to add/remove", value=1.0, min_value=0.5, step=0.5, key="ssg_amount")
         with col3:
             st.write("")
             st.write("")
