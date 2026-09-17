@@ -936,6 +936,55 @@ with tabs[0]:
             st.markdown("### 🎯 Top Assists")
             render_editable_squad_table("Assists", MANUAL_ASSISTS_KEY, assist_counts, "Assists", "assists")
 
+        st.divider()
+        st.markdown("### 🔥 Goal Involvements (Goals + Assists)")
+
+        manual_goals = load_manual_tally(MANUAL_GOALS_KEY)
+        total_goals = dict(goal_counts)
+        for initials, amount in manual_goals.items():
+            total_goals[initials] = total_goals.get(initials, 0) + amount
+
+        manual_assists = load_manual_tally(MANUAL_ASSISTS_KEY)
+        total_assists = dict(assist_counts)
+        for initials, amount in manual_assists.items():
+            total_assists[initials] = total_assists.get(initials, 0) + amount
+
+        all_initials = set(total_goals) | set(total_assists) | set(SQUAD_ROSTER)
+        combined_rows = [
+            {
+                "Initials": initials,
+                "Player": SQUAD_ROSTER.get(initials, "(not in roster)"),
+                "Goals": total_goals.get(initials, 0),
+                "Assists": total_assists.get(initials, 0),
+                "G+A": total_goals.get(initials, 0) + total_assists.get(initials, 0),
+            }
+            for initials in all_initials
+        ]
+
+        combined_df = pd.DataFrame(combined_rows).sort_values(
+            ["G+A", "Player"], ascending=[False, True]
+        ).reset_index(drop=True)
+
+        combined_rows_html = "".join(
+            f'<tr style="background:{"#FFFFFF" if idx % 2 == 0 else "#F0F0F0"};color:#001C58;">'
+            f'<td style="padding:10px 16px;text-align:left;font-weight:600;">{row["Player"]} ({row["Initials"]})</td>'
+            f'<td style="padding:10px 16px;text-align:center;">{row["Goals"]}</td>'
+            f'<td style="padding:10px 16px;text-align:center;">{row["Assists"]}</td>'
+            f'<td style="padding:10px 16px;text-align:center;font-weight:800;">{row["G+A"]}</td></tr>'
+            for idx, row in combined_df.iterrows()
+        )
+        combined_html = (
+            '<div style="background:#00285E;border-radius:6px;overflow:hidden;font-family:Arial, sans-serif;">'
+            '<table style="width:100%;border-collapse:collapse;">'
+            '<tr style="background:#00285E;color:#FFFFFF;">'
+            '<th style="padding:10px 16px;text-align:left;">PLAYER</th>'
+            '<th style="padding:10px 16px;text-align:center;">GOALS</th>'
+            '<th style="padding:10px 16px;text-align:center;">ASSISTS</th>'
+            '<th style="padding:10px 16px;text-align:center;">G+A</th></tr>'
+            f'{combined_rows_html}</table></div>'
+        )
+        st.markdown(combined_html, unsafe_allow_html=True)
+
 
 
 
