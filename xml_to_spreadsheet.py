@@ -164,6 +164,7 @@ SQUAD_ROSTER = {
     "AGR": "Adrian Gregory",
     "TH": "Theiry Henry",
     "RC": "Reilly Cush",
+    "ER": "Ethan Raggett",
 }
 
 FIXTURE_DATA_KEY = "fixtures_data"
