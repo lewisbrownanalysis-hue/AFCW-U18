@@ -169,6 +169,18 @@ SQUAD_ROSTER = {
 
 FIXTURE_DATA_KEY = "fixtures_data"
 MANUAL_STRIKES_KEY = "manual_strikes"
+STRIKE_LOG_KEY = "strike_log"
+
+
+def load_strike_log():
+    """List of {'initials', 'date', 'reason'} — manually logged strikes with a reason."""
+    return kv_get(STRIKE_LOG_KEY, [])
+
+
+def add_strike_log_entry(initials, date_str, reason):
+    log = load_strike_log()
+    log.append({"initials": initials, "date": date_str, "reason": reason})
+    kv_set(STRIKE_LOG_KEY, log)
 MANUAL_GOALS_KEY = "manual_goals"
 MANUAL_ASSISTS_KEY = "manual_assists"
 
@@ -1169,26 +1181,43 @@ with tabs[1]:
 
         suspension_threshold = 3  # fixed — players highlighted red once they hit this many
 
-        st.subheader("Add strikes")
-        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-        with col1:
-            strike_player = st.text_input("Player initials (e.g. JB)", key="manual_strike_player")
-        with col2:
-            strike_amount = st.number_input("Strikes to add/remove", value=1, min_value=1, step=1, key="manual_strike_amount")
-        with col3:
-            st.write("")
-            st.write("")
-            if st.button("Add to table"):
-                if strike_player.strip():
-                    add_manual_tally(MANUAL_STRIKES_KEY, strike_player.strip(), strike_amount)
-                    st.rerun()
-        with col4:
-            st.write("")
-            st.write("")
-            if st.button("Remove from table"):
-                if strike_player.strip():
-                    add_manual_tally(MANUAL_STRIKES_KEY, strike_player.strip(), -strike_amount)
-                    st.rerun()
+        st.subheader("Log a strike (with reason)")
+        st.caption("This is the main way to add a strike — it records the date and reason so you can look it up later.")
+        log_col1, log_col2, log_col3 = st.columns([1, 1, 2])
+        with log_col1:
+            log_player = st.text_input("Player initials (e.g. JB)", key="strike_log_player")
+        with log_col2:
+            log_date = st.date_input("Date", value=date.today(), key="strike_log_date")
+        with log_col3:
+            log_reason = st.text_input("Reason (e.g. Late to training, reckless tackle)", key="strike_log_reason")
+        if st.button("Log strike", key="strike_log_btn"):
+            if log_player.strip() and log_reason.strip():
+                add_strike_log_entry(log_player.strip(), log_date.strftime("%d/%m/%Y"), log_reason.strip())
+                add_manual_tally(MANUAL_STRIKES_KEY, log_player.strip(), 1)
+                st.rerun()
+            else:
+                st.warning("Enter both the player's initials and a reason before logging.")
+
+        with st.expander("Quick add/remove strikes (no reason recorded)"):
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            with col1:
+                strike_player = st.text_input("Player initials (e.g. JB)", key="manual_strike_player")
+            with col2:
+                strike_amount = st.number_input("Strikes to add/remove", value=1, min_value=1, step=1, key="manual_strike_amount")
+            with col3:
+                st.write("")
+                st.write("")
+                if st.button("Add to table"):
+                    if strike_player.strip():
+                        add_manual_tally(MANUAL_STRIKES_KEY, strike_player.strip(), strike_amount)
+                        st.rerun()
+            with col4:
+                st.write("")
+                st.write("")
+                if st.button("Remove from table"):
+                    if strike_player.strip():
+                        add_manual_tally(MANUAL_STRIKES_KEY, strike_player.strip(), -strike_amount)
+                        st.rerun()
 
         with st.expander("Reset a player's strikes to 0"):
             reset_col1, reset_col2 = st.columns([2, 1])
@@ -1237,6 +1266,44 @@ with tabs[1]:
         )
         st.markdown(strikes_html, unsafe_allow_html=True)
         st.caption(f"Players highlighted red have reached {suspension_threshold}+ strikes.")
+
+        st.divider()
+        st.markdown("### Strike log by player")
+        st.caption("Click a player to see the date and reason behind each of their strikes.")
+
+        manual_log = load_strike_log()
+        players_with_strikes = strikes_df[strikes_df["Strikes"] > 0].sort_values(
+            ["Strikes", "Player"], ascending=[False, True]
+        )
+
+        if players_with_strikes.empty:
+            st.caption("No players currently have any strikes.")
+        else:
+            for _, row in players_with_strikes.iterrows():
+                initials, name, count = row["Initials"], row["Player"], row["Strikes"]
+                with st.expander(f"{name} ({initials}) — {count:g} strike(s)"):
+                    log_entries = []
+
+                    # Manually logged strikes (have a real reason)
+                    for entry in manual_log:
+                        if entry.get("initials") == initials:
+                            log_entries.append({"Date": entry.get("date", ""), "Reason": entry.get("reason", "")})
+
+                    # Fixture-tagged strikes (date + opponent, no reason recorded at the time)
+                    for fx_key, fx_entry in all_fixture_data.items():
+                        for player in fx_entry.get("strikes", []):
+                            if player == initials:
+                                fx_date = fx_key.split("_", 1)[0]
+                                opponent = fx_key.split("_", 1)[1] if "_" in fx_key else ""
+                                log_entries.append({
+                                    "Date": fx_date,
+                                    "Reason": f"Card/incident vs {opponent} (from Fixtures — no reason recorded)"
+                                })
+
+                    if log_entries:
+                        st.dataframe(pd.DataFrame(log_entries), use_container_width=True, hide_index=True)
+                    else:
+                        st.caption("No logged reason yet — this player's strikes were added via the quick add/remove tool.")
 
 
 
