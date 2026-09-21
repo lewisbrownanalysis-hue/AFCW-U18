@@ -1246,7 +1246,7 @@ with tabs[1]:
                 roster_rows.append({"Initials": initials, "Player": "(not in roster)", "Strikes": strike_counts[initials]})
 
         strikes_df = pd.DataFrame(roster_rows).sort_values(
-            ['Strikes', 'Player'], ascending=[True, True]
+            ['Strikes', 'Player'], ascending=[False, True]
         ).reset_index(drop=True)
 
         rows_html = "".join(
@@ -1282,6 +1282,14 @@ with tabs[1]:
             for _, row in players_with_strikes.iterrows():
                 initials, name, count = row["Initials"], row["Player"], row["Strikes"]
                 with st.expander(f"{name} ({initials}) — {count:g} strike(s)"):
+                    served_col1, served_col2 = st.columns([3, 1])
+                    with served_col1:
+                        st.caption("Punishment served — this only reduces the count above. The log entries below are kept for the record.")
+                    with served_col2:
+                        if st.button("Take off 1 strike", key=f"serve_strike_{initials}"):
+                            add_manual_tally(MANUAL_STRIKES_KEY, initials, -1)
+                            st.rerun()
+
                     log_entries = []
 
                     # Manually logged strikes (have a real reason)
