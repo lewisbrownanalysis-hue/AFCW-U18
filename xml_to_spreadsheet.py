@@ -170,6 +170,7 @@ SQUAD_ROSTER = {
 FIXTURE_DATA_KEY = "fixtures_data"
 MANUAL_STRIKES_KEY = "manual_strikes"
 STRIKE_LOG_KEY = "strike_log"
+REFEREE_LOG_KEY = "referee_log"
 
 
 def load_strike_log():
@@ -181,6 +182,17 @@ def add_strike_log_entry(initials, date_str, reason):
     log = load_strike_log()
     log.append({"initials": initials, "date": date_str, "reason": reason})
     kv_set(STRIKE_LOG_KEY, log)
+
+
+def load_referee_log():
+    """List of {'initials', 'date'} — dates a player refereed as punishment for reaching 2 strikes."""
+    return kv_get(REFEREE_LOG_KEY, [])
+
+
+def add_referee_log_entry(initials, date_str):
+    log = load_referee_log()
+    log.append({"initials": initials, "date": date_str})
+    kv_set(REFEREE_LOG_KEY, log)
 MANUAL_GOALS_KEY = "manual_goals"
 MANUAL_ASSISTS_KEY = "manual_assists"
 
@@ -1272,6 +1284,7 @@ with tabs[1]:
         st.caption("Click a player to see the date and reason behind each of their strikes.")
 
         manual_log = load_strike_log()
+        referee_log = load_referee_log()
         players_with_strikes = strikes_df[strikes_df["Strikes"] > 0].sort_values(
             ["Strikes", "Player"], ascending=[False, True]
         )
@@ -1290,12 +1303,29 @@ with tabs[1]:
                             add_manual_tally(MANUAL_STRIKES_KEY, initials, -1)
                             st.rerun()
 
+                    if count >= 2:
+                        st.caption("Punishment for reaching 2 strikes — log the date this player refereed a match.")
+                        ref_col1, ref_col2 = st.columns([2, 1])
+                        with ref_col1:
+                            referee_date = st.date_input("Date refereed", value=date.today(), key=f"referee_date_{initials}")
+                        with ref_col2:
+                            st.write("")
+                            st.write("")
+                            if st.button("Log referee date", key=f"referee_log_btn_{initials}"):
+                                add_referee_log_entry(initials, referee_date.strftime("%d/%m/%Y"))
+                                st.rerun()
+
                     log_entries = []
 
                     # Manually logged strikes (have a real reason)
                     for entry in manual_log:
                         if entry.get("initials") == initials:
                             log_entries.append({"Date": entry.get("date", ""), "Reason": entry.get("reason", "")})
+
+                    # Referee dates (punishment served for reaching 2 strikes)
+                    for entry in referee_log:
+                        if entry.get("initials") == initials:
+                            log_entries.append({"Date": entry.get("date", ""), "Reason": "Refereed a match (punishment for reaching 2 strikes)"})
 
                     # Fixture-tagged strikes (date + opponent, no reason recorded at the time)
                     for fx_key, fx_entry in all_fixture_data.items():
