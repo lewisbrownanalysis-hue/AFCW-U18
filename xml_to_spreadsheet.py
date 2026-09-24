@@ -194,13 +194,35 @@ def update_strike_log_entry(index, date_str=None, reason=None):
         kv_set(STRIKE_LOG_KEY, log)
 
 
+def mark_strike_served(index):
+    """Takes a logged strike off the player's active tally but KEEPS the entry — for when the
+    punishment (e.g. refereeing) has been completed and the record should stay for management."""
+    log = load_strike_log()
+    if 0 <= index < len(log) and not log[index].get("served"):
+        log[index]["served"] = True
+        kv_set(STRIKE_LOG_KEY, log)
+        add_manual_tally(MANUAL_STRIKES_KEY, log[index].get("initials", ""), -1)
+
+
+def unmark_strike_served(index):
+    """Undo — puts a previously-served strike back on the player's active tally."""
+    log = load_strike_log()
+    if 0 <= index < len(log) and log[index].get("served"):
+        log[index]["served"] = False
+        kv_set(STRIKE_LOG_KEY, log)
+        add_manual_tally(MANUAL_STRIKES_KEY, log[index].get("initials", ""), 1)
+
+
 def delete_strike_log_entry(index):
-    """Removes one logged strike entry and takes the matching strike back off the player's tally."""
+    """Permanently erases one logged strike entry — only for correcting a mistake (e.g. wrong
+    player/typo). Do NOT use this to serve a punishment; use mark_strike_served for that so the
+    record is kept."""
     log = load_strike_log()
     if 0 <= index < len(log):
         removed = log.pop(index)
         kv_set(STRIKE_LOG_KEY, log)
-        add_manual_tally(MANUAL_STRIKES_KEY, removed.get("initials", ""), -1)
+        if not removed.get("served"):
+            add_manual_tally(MANUAL_STRIKES_KEY, removed.get("initials", ""), -1)
 
 
 def load_referee_log():
@@ -1319,9 +1341,15 @@ with tabs[1]:
 
         manual_log = load_strike_log()
         referee_log = load_referee_log()
-        players_with_strikes = strikes_df[strikes_df["Strikes"] > 0].sort_values(
-            ["Strikes", "Player"], ascending=[False, True]
-        )
+
+        # Anyone who has ever had a strike logged, even if their current tally is back to 0
+        history_initials = {e.get("initials") for e in manual_log} | {e.get("initials") for e in referee_log}
+        for fx_entry in all_fixture_data.values():
+            history_initials.update(fx_entry.get("strikes", []))
+
+        players_with_strikes = strikes_df[
+            (strikes_df["Strikes"] > 0) | (strikes_df["Initials"].isin(history_initials))
+        ].sort_values(["Strikes", "Player"], ascending=[False, True])
 
         if players_with_strikes.empty:
             st.caption("No players currently have any strikes.")
@@ -1349,13 +1377,15 @@ with tabs[1]:
                                 add_referee_log_entry(initials, referee_date.strftime("%d/%m/%Y"))
                                 st.rerun()
 
-                    st.markdown("**Manually logged strikes** — edit the date/reason or remove one")
+                    st.markdown("**Manually logged strikes** — edit, or mark as served once the punishment's been carried out")
+                    st.caption("Marking as served takes it off the active tally but keeps the record below permanently. Use Delete only to correct a mistake (e.g. wrong player/typo) — it erases the entry entirely.")
                     manual_entries_for_player = [
                         (i, entry) for i, entry in enumerate(manual_log) if entry.get("initials") == initials
                     ]
                     if manual_entries_for_player:
                         for i, entry in manual_entries_for_player:
-                            e_col1, e_col2, e_col3, e_col4 = st.columns([1, 2, 1, 1])
+                            served = entry.get("served", False)
+                            e_col1, e_col2, e_col3, e_col4, e_col5 = st.columns([1, 2, 1, 1, 1])
                             with e_col1:
                                 new_date = st.text_input("Date", value=entry.get("date", ""), key=f"edit_strike_date_{i}")
                             with e_col2:
@@ -1369,9 +1399,22 @@ with tabs[1]:
                             with e_col4:
                                 st.write("")
                                 st.write("")
+                                if served:
+                                    if st.button("Undo served", key=f"unserve_strike_{i}"):
+                                        unmark_strike_served(i)
+                                        st.rerun()
+                                else:
+                                    if st.button("Mark as served", key=f"serve_strike_{i}"):
+                                        mark_strike_served(i)
+                                        st.rerun()
+                            with e_col5:
+                                st.write("")
+                                st.write("")
                                 if st.button("Delete", key=f"delete_strike_{i}"):
                                     delete_strike_log_entry(i)
                                     st.rerun()
+                            if served:
+                                st.caption("✅ Served — kept for the record, no longer counted in the active tally.")
                     else:
                         st.caption("No manually logged strikes (with reason) for this player.")
 
