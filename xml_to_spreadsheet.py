@@ -184,6 +184,25 @@ def add_strike_log_entry(initials, date_str, reason):
     kv_set(STRIKE_LOG_KEY, log)
 
 
+def update_strike_log_entry(index, date_str=None, reason=None):
+    log = load_strike_log()
+    if 0 <= index < len(log):
+        if date_str is not None:
+            log[index]["date"] = date_str
+        if reason is not None:
+            log[index]["reason"] = reason
+        kv_set(STRIKE_LOG_KEY, log)
+
+
+def delete_strike_log_entry(index):
+    """Removes one logged strike entry and takes the matching strike back off the player's tally."""
+    log = load_strike_log()
+    if 0 <= index < len(log):
+        removed = log.pop(index)
+        kv_set(STRIKE_LOG_KEY, log)
+        add_manual_tally(MANUAL_STRIKES_KEY, removed.get("initials", ""), -1)
+
+
 def load_referee_log():
     """List of {'initials', 'date'} — dates a player refereed as punishment for reaching 2 strikes."""
     return kv_get(REFEREE_LOG_KEY, [])
@@ -193,6 +212,21 @@ def add_referee_log_entry(initials, date_str):
     log = load_referee_log()
     log.append({"initials": initials, "date": date_str})
     kv_set(REFEREE_LOG_KEY, log)
+
+
+def update_referee_log_entry(index, date_str=None):
+    log = load_referee_log()
+    if 0 <= index < len(log):
+        if date_str is not None:
+            log[index]["date"] = date_str
+        kv_set(REFEREE_LOG_KEY, log)
+
+
+def delete_referee_log_entry(index):
+    log = load_referee_log()
+    if 0 <= index < len(log):
+        log.pop(index)
+        kv_set(REFEREE_LOG_KEY, log)
 MANUAL_GOALS_KEY = "manual_goals"
 MANUAL_ASSISTS_KEY = "manual_assists"
 
@@ -1315,32 +1349,71 @@ with tabs[1]:
                                 add_referee_log_entry(initials, referee_date.strftime("%d/%m/%Y"))
                                 st.rerun()
 
-                    log_entries = []
+                    st.markdown("**Manually logged strikes** — edit the date/reason or remove one")
+                    manual_entries_for_player = [
+                        (i, entry) for i, entry in enumerate(manual_log) if entry.get("initials") == initials
+                    ]
+                    if manual_entries_for_player:
+                        for i, entry in manual_entries_for_player:
+                            e_col1, e_col2, e_col3, e_col4 = st.columns([1, 2, 1, 1])
+                            with e_col1:
+                                new_date = st.text_input("Date", value=entry.get("date", ""), key=f"edit_strike_date_{i}")
+                            with e_col2:
+                                new_reason = st.text_input("Reason", value=entry.get("reason", ""), key=f"edit_strike_reason_{i}")
+                            with e_col3:
+                                st.write("")
+                                st.write("")
+                                if st.button("Save", key=f"save_strike_{i}"):
+                                    update_strike_log_entry(i, date_str=new_date.strip(), reason=new_reason.strip())
+                                    st.rerun()
+                            with e_col4:
+                                st.write("")
+                                st.write("")
+                                if st.button("Delete", key=f"delete_strike_{i}"):
+                                    delete_strike_log_entry(i)
+                                    st.rerun()
+                    else:
+                        st.caption("No manually logged strikes (with reason) for this player.")
 
-                    # Manually logged strikes (have a real reason)
-                    for entry in manual_log:
-                        if entry.get("initials") == initials:
-                            log_entries.append({"Date": entry.get("date", ""), "Reason": entry.get("reason", "")})
+                    referee_entries_for_player = [
+                        (i, entry) for i, entry in enumerate(referee_log) if entry.get("initials") == initials
+                    ]
+                    if referee_entries_for_player:
+                        st.markdown("**Referee dates logged** (punishment for reaching 2 strikes)")
+                        for i, entry in referee_entries_for_player:
+                            r_col1, r_col2, r_col3 = st.columns([2, 1, 1])
+                            with r_col1:
+                                new_ref_date = st.text_input("Date refereed", value=entry.get("date", ""), key=f"edit_ref_date_{i}")
+                            with r_col2:
+                                st.write("")
+                                st.write("")
+                                if st.button("Save", key=f"save_ref_{i}"):
+                                    update_referee_log_entry(i, date_str=new_ref_date.strip())
+                                    st.rerun()
+                            with r_col3:
+                                st.write("")
+                                st.write("")
+                                if st.button("Delete", key=f"delete_ref_{i}"):
+                                    delete_referee_log_entry(i)
+                                    st.rerun()
 
-                    # Referee dates (punishment served for reaching 2 strikes)
-                    for entry in referee_log:
-                        if entry.get("initials") == initials:
-                            log_entries.append({"Date": entry.get("date", ""), "Reason": "Refereed a match (punishment for reaching 2 strikes)"})
-
-                    # Fixture-tagged strikes (date + opponent, no reason recorded at the time)
+                    # Fixture-tagged strikes (date + opponent, no reason recorded at the time) — read only here
+                    fixture_entries = []
                     for fx_key, fx_entry in all_fixture_data.items():
                         for player in fx_entry.get("strikes", []):
                             if player == initials:
                                 fx_date = fx_key.split("_", 1)[0]
                                 opponent = fx_key.split("_", 1)[1] if "_" in fx_key else ""
-                                log_entries.append({
+                                fixture_entries.append({
                                     "Date": fx_date,
                                     "Reason": f"Card/incident vs {opponent} (from Fixtures — no reason recorded)"
                                 })
 
-                    if log_entries:
-                        st.dataframe(pd.DataFrame(log_entries), use_container_width=True, hide_index=True)
-                    else:
+                    if fixture_entries:
+                        st.markdown("**From tagged fixtures** (edit these in the Fixtures tab, not here)")
+                        st.dataframe(pd.DataFrame(fixture_entries), use_container_width=True, hide_index=True)
+
+                    if not manual_entries_for_player and not referee_entries_for_player and not fixture_entries:
                         st.caption("No logged reason yet — this player's strikes were added via the quick add/remove tool.")
 
 
