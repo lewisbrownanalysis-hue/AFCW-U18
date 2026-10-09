@@ -206,7 +206,7 @@ def mark_strike_served(index):
     if 0 <= index < len(log) and not log[index].get("served"):
         log[index]["served"] = True
         kv_set(STRIKE_LOG_KEY, log)
-        add_manual_tally(MANUAL_STRIKES_KEY, log[index].get("initials", ""), -1)
+        _reduce_strike_total(log[index].get("initials", ""), 1)
 
 
 def unmark_strike_served(index):
@@ -227,7 +227,7 @@ def delete_strike_log_entry(index):
         removed = log.pop(index)
         kv_set(STRIKE_LOG_KEY, log)
         if not removed.get("served"):
-            add_manual_tally(MANUAL_STRIKES_KEY, removed.get("initials", ""), -1)
+            _reduce_strike_total(removed.get("initials", ""), 1)
 
 
 def load_referee_log():
@@ -343,6 +343,46 @@ def add_manual_tally(key, initials, amount):
     data = load_manual_tally(key)
     data[initials] = data.get(initials, 0) + amount
     return kv_set(key, data)
+
+
+def _fixture_strike_counts():
+    """Strikes tagged directly on fixtures — the part of a player's tally that ISN'T the
+    manual/log-driven number, used so removals can floor the live total at 0 correctly."""
+    counts = {}
+    for entry in load_fixture_data().values():
+        for player in entry.get('strikes', []):
+            counts[player] = counts.get(player, 0) + 1
+    return counts
+
+
+def _reduce_strike_total(initials, by=1, fixture_counts=None):
+    """Lowers a player's LIVE strike tally by `by`, floored at 0 — never goes negative, and
+    never touches the strike log / referee log, so the historical record is always kept."""
+    if fixture_counts is None:
+        fixture_counts = _fixture_strike_counts()
+    manual = load_manual_tally(MANUAL_STRIKES_KEY)
+    current_total = fixture_counts.get(initials, 0) + manual.get(initials, 0)
+    new_total = max(0, current_total - by)
+    manual[initials] = new_total - fixture_counts.get(initials, 0)
+    return kv_set(MANUAL_STRIKES_KEY, manual)
+
+
+def _heal_negative_strike_tallies():
+    """One-time-per-load self-heal: if a player's live tally has drifted below 0 (e.g. from
+    repeated remove-clicks while the database was unreachable), bring it back up to 0. This
+    only touches the manual tally number — it never changes strike_log/referee_log, so the
+    memory of past strikes is always preserved."""
+    fixture_counts = _fixture_strike_counts()
+    manual = load_manual_tally(MANUAL_STRIKES_KEY)
+    changed = False
+    for initials, amount in list(manual.items()):
+        total = fixture_counts.get(initials, 0) + amount
+        if total < 0:
+            manual[initials] = -fixture_counts.get(initials, 0)
+            changed = True
+    if changed:
+        kv_set(MANUAL_STRIKES_KEY, manual)
+    return manual
 
 
 SSG_DATA_KEY = "ssg_data"
@@ -1276,8 +1316,10 @@ with tabs[1]:
             for player in entry.get('strikes', []):
                 strike_counts[player] = strike_counts.get(player, 0) + 1
 
-        # Add any manually-entered strikes on top of the fixture-derived ones
-        manual_strikes = load_manual_tally(MANUAL_STRIKES_KEY)
+        # Self-heal any negative drift (e.g. from repeated remove-clicks during an outage) so the
+        # table never shows a minus number — this only adjusts the live tally, the strike log
+        # below (and the referee log) always keeps the full history untouched.
+        manual_strikes = _heal_negative_strike_tallies()
         for initials, amount in manual_strikes.items():
             strike_counts[initials] = strike_counts.get(initials, 0) + amount
 
@@ -1322,8 +1364,8 @@ with tabs[1]:
                 st.write("")
                 if st.button("Remove from table"):
                     if strike_player.strip():
-                        add_manual_tally(MANUAL_STRIKES_KEY, strike_player.strip(), -strike_amount)
-                        st.rerun()
+                        if _reduce_strike_total(strike_player.strip(), strike_amount):
+                            st.rerun()
 
         with st.expander("Reset a player's strikes to 0"):
             reset_col1, reset_col2 = st.columns([2, 1])
@@ -1335,7 +1377,7 @@ with tabs[1]:
                 if st.button("Reset to 0", key="strike_reset_btn"):
                     if strike_reset_player.strip():
                         initials = strike_reset_player.strip()
-                        fixture_amount = strike_counts.get(initials, 0) - load_manual_tally(MANUAL_STRIKES_KEY).get(initials, 0)
+                        fixture_amount = _fixture_strike_counts().get(initials, 0)
                         manual_data = load_manual_tally(MANUAL_STRIKES_KEY)
                         manual_data[initials] = -fixture_amount
                         kv_set(MANUAL_STRIKES_KEY, manual_data)
@@ -1399,9 +1441,9 @@ with tabs[1]:
                     with served_col1:
                         st.caption("Punishment served — this only reduces the count above. The log entries below are kept for the record.")
                     with served_col2:
-                        if st.button("Take off 1 strike", key=f"serve_strike_{initials}"):
-                            add_manual_tally(MANUAL_STRIKES_KEY, initials, -1)
-                            st.rerun()
+                        if st.button("Take off 1 strike", key=f"serve_strike_{initials}", disabled=(count <= 0)):
+                            if _reduce_strike_total(initials, 1):
+                                st.rerun()
 
                     if count >= 2:
                         st.caption("Punishment for reaching 2 strikes — log the date this player refereed a match.")
