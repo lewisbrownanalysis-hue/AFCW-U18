@@ -122,10 +122,11 @@ def kv_set(key, value):
                 {"k": key, "v": json.dumps(value)}
             )
             conn.commit()
-        _fetch_raw_value.clear(key)
+        _fetch_raw_value.clear()
         return True
     except Exception as e:
-        st.error(f"Could not save '{key}' to the database: {e}")
+        st.error(f"Could not save '{key}' to the database.")
+        st.exception(e)
         return False
 
 
@@ -1241,6 +1242,34 @@ with tabs[1]:
 
         st.divider()
         section_banner("Disciplinary Strikes", "Season tally, updated automatically from your fixtures")
+
+        with st.expander("🔧 Troubleshooting: test database connection"):
+            st.caption("If logging a strike isn't working, click this to see the exact reason why.")
+            if st.button("Run test", key="db_test_btn"):
+                test_key = "connection_test"
+                test_value = {"checked_at": date.today().strftime("%d/%m/%Y")}
+
+                st.write("1. Writing a test value...")
+                write_ok = kv_set(test_key, test_value)
+                if write_ok:
+                    st.success("Write succeeded.")
+                else:
+                    st.error("Write failed — the exact error is shown above. Most likely causes: the database credentials in Streamlit's secrets are wrong, or the Supabase project is paused (free-tier Supabase projects pause themselves after a week of no activity — check supabase.com and unpause it if so).")
+
+                st.write("2. Reading it straight back (bypassing the cache)...")
+                try:
+                    engine = get_db_engine()
+                    with engine.connect() as conn:
+                        result = conn.execute(
+                            sqlalchemy.text("SELECT value FROM app_data WHERE key = :k"), {"k": test_key}
+                        ).fetchone()
+                    if result:
+                        st.success(f"Read succeeded: {result[0]}")
+                    else:
+                        st.warning("Read ran fine but found no row — the write above didn't actually land.")
+                except Exception as e:
+                    st.error("Read failed — the database connection itself isn't working.")
+                    st.exception(e)
 
         strike_counts = {}
         for key, entry in all_fixture_data.items():
