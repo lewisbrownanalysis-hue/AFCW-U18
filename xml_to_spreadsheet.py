@@ -1346,6 +1346,46 @@ with tabs[1]:
             else:
                 st.warning("Enter both the player's initials and a reason before logging.")
 
+        st.divider()
+        st.subheader("Log referee duty")
+        st.caption("Punishment for reaching 2 strikes — log the date here whenever a player referees a match. Works for any player, any time (doesn't require them to currently be sat on 2 strikes).")
+        ref_log_col1, ref_log_col2 = st.columns([1, 1])
+        with ref_log_col1:
+            ref_log_player = st.text_input("Player initials (e.g. JB)", key="referee_log_player")
+        with ref_log_col2:
+            ref_log_date = st.date_input("Date refereed", value=date.today(), key="referee_log_date")
+        if st.button("Log referee date", key="referee_log_btn_global"):
+            if ref_log_player.strip():
+                if add_referee_log_entry(ref_log_player.strip(), ref_log_date.strftime("%d/%m/%Y")):
+                    st.success(f"Logged a referee date for {ref_log_player.strip()}.")
+                    st.rerun()
+            else:
+                st.warning("Enter the player's initials before logging.")
+
+        referee_log_overview = load_referee_log()
+        if referee_log_overview:
+            from datetime import datetime as _dt_ref
+
+            def _ref_date_sort_key(entry):
+                try:
+                    return _dt_ref.strptime(entry.get("date", ""), "%d/%m/%Y")
+                except Exception:
+                    return _dt_ref.min
+
+            ordered_overview = sorted(referee_log_overview, key=_ref_date_sort_key, reverse=True)
+            with st.expander(f"Referee duty log — all players ({len(ordered_overview)} entries)"):
+                overview_rows = [
+                    {
+                        "Player": SQUAD_ROSTER.get(e.get("initials", ""), e.get("initials", "")),
+                        "Initials": e.get("initials", ""),
+                        "Date refereed": e.get("date", ""),
+                    }
+                    for e in ordered_overview
+                ]
+                st.dataframe(pd.DataFrame(overview_rows), use_container_width=True, hide_index=True)
+        else:
+            st.caption("No referee duty logged yet.")
+
         with st.expander("Quick add/remove strikes (no reason recorded)"):
             col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
             with col1:
