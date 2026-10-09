@@ -110,6 +110,7 @@ def kv_get(key, default):
 
 
 def kv_set(key, value):
+    """Returns True on success, False on failure (and shows the error on screen)."""
     try:
         engine = get_db_engine()
         with engine.connect() as conn:
@@ -122,8 +123,10 @@ def kv_set(key, value):
             )
             conn.commit()
         _fetch_raw_value.clear(key)
+        return True
     except Exception as e:
         st.error(f"Could not save '{key}' to the database: {e}")
+        return False
 
 
 HISTORY_KEY = "match_history"
@@ -179,9 +182,10 @@ def load_strike_log():
 
 
 def add_strike_log_entry(initials, date_str, reason):
+    """Returns True on success, False if the save failed."""
     log = load_strike_log()
     log.append({"initials": initials, "date": date_str, "reason": reason})
-    kv_set(STRIKE_LOG_KEY, log)
+    return kv_set(STRIKE_LOG_KEY, log)
 
 
 def update_strike_log_entry(index, date_str=None, reason=None):
@@ -334,9 +338,10 @@ def load_manual_tally(key):
 
 
 def add_manual_tally(key, initials, amount):
+    """Returns True on success, False if the save failed."""
     data = load_manual_tally(key)
     data[initials] = data.get(initials, 0) + amount
-    kv_set(key, data)
+    return kv_set(key, data)
 
 
 SSG_DATA_KEY = "ssg_data"
@@ -1260,9 +1265,13 @@ with tabs[1]:
             log_reason = st.text_input("Reason (e.g. Late to training, reckless tackle)", key="strike_log_reason")
         if st.button("Log strike", key="strike_log_btn"):
             if log_player.strip() and log_reason.strip():
-                add_strike_log_entry(log_player.strip(), log_date.strftime("%d/%m/%Y"), log_reason.strip())
-                add_manual_tally(MANUAL_STRIKES_KEY, log_player.strip(), 1)
-                st.rerun()
+                log_ok = add_strike_log_entry(log_player.strip(), log_date.strftime("%d/%m/%Y"), log_reason.strip())
+                tally_ok = add_manual_tally(MANUAL_STRIKES_KEY, log_player.strip(), 1)
+                if log_ok and tally_ok:
+                    st.success(f"Logged a strike for {log_player.strip()}.")
+                    st.rerun()
+                # If a save failed, kv_set already showed the error above — don't rerun,
+                # so that error stays on screen instead of being wiped by the rerun.
             else:
                 st.warning("Enter both the player's initials and a reason before logging.")
 
